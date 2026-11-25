@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Realistic Space Sensor Lab</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<!-- Chart -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Font -->
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  height:100vh;
+  font-family:'Orbitron',sans-serif;
+  overflow:hidden;
+  background:black;
+  color:#00fff0;
+}
+
+/* ===== SPACE CANVAS ===== */
+#space{
+  position:fixed;
+  inset:0;
+  z-index:0;
+}
+
+/* ===== DASHBOARD ===== */
+.dashboard{
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:460px;
+  background:rgba(0,0,0,.65);
+  backdrop-filter:blur(18px);
+  border-radius:26px;
+  padding:26px;
+  box-shadow:0 0 60px #00fff055;
+  z-index:5;
+}
+
+.title{text-align:center;letter-spacing:2px;margin-bottom:14px}
+.sensor{text-align:center;margin-bottom:18px}
+
+.ring{
+  width:140px;height:140px;
+  border-radius:50%;
+  border:3px solid #00fff0;
+  box-shadow:0 0 30px #00fff0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin:auto;
+}
+
+.value{font-size:32px}
+.unit{font-size:14px;opacity:.7}
+.label{font-size:13px;opacity:.6}
+
+.chart-box{
+  background:#000;
+  padding:10px;
+  border-radius:12px;
+}
+
+.controls{
+  display:flex;
+  justify-content:space-between;
+  margin-top:12px;
+}
+button{
+  background:none;
+  border:1px solid #00fff0;
+  color:#00fff0;
+  padding:6px 14px;
+  border-radius:8px;
+  cursor:pointer;
+}
+button:hover{
+  background:#00fff0;
+  color:#000;
+  box-shadow:0 0 20px #00fff0;
+}
+</style>
+</head>
+
+<body>
+
+<!-- 🌌 SPACE -->
+<canvas id="space"></canvas>
+
+<!-- 🧠 DASHBOARD -->
+<div class="dashboard">
+  <div class="title">🚀 SPACE SENSOR LAB</div>
+
+  <div class="sensor">
+    <div class="ring">
+      <div>
+        <div class="value" id="temperature">--</div>
+        <div class="unit">°C</div>
+      </div>
+    </div>
+    <div class="label">TEMPERATURE</div>
+  </div>
+
+  <div class="sensor">
+    <div class="ring">
+      <div>
+        <div class="value" id="humidity">--</div>
+        <div class="unit">%</div>
+      </div>
+    </div>
+    <div class="label">HUMIDITY</div>
+  </div>
+
+  <div class="chart-box">
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="controls">
+    <button onclick="exportCSV()">Export CSV</button>
+    <button onclick="clearChart()">Clear</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   🌌 REALISTIC SPACE ENGINE
+   ========================================================= */
+const canvas = document.getElementById("space");
+const ctx = canvas.getContext("2d");
+resize();
+window.onresize = resize;
+
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+
+/* ---------- Stars ---------- */
+const stars=[];
+for(let i=0;i<300;i++){
+  stars.push({
+    x:Math.random()*canvas.width,
+    y:Math.random()*canvas.height,
+    r:Math.random()*1.5,
+    a:Math.random()
+  });
+}
+
+/* ---------- Shooting Stars ---------- */
+const shootingStars=[];
+document.addEventListener("mousemove",e=>{
+  if(Math.random()<0.03){
+    shootingStars.push({
+      x:e.clientX,
+      y:e.clientY,
+      vx:Math.random()*8+6,
+      vy:Math.random()*-4-2,
+      life:30
+    });
+  }
+});
+
+/* ---------- Planets (Procedural Textures) ---------- */
+const center={x:canvas.width/2,y:canvas.height/2};
+const G=0.001;
+
+function makePlanet(r,dist,speed,colors){
+  return{
+    r,dist,angle:Math.random()*Math.PI*2,
+    speed,colors
+  };
+}
+
+const planets=[
+  makePlanet(30,120,0.02,["#888","#444"]),         // Mercury
+  makePlanet(45,190,0.015,["#c2b280","#8b7d3a"]), // Venus
+  makePlanet(50,260,0.012,["#2a9df4","#145da0"]), // Earth
+  makePlanet(40,330,0.010,["#b22222","#7f0000"])  // Mars
+];
+
+/* ---------- Satellite ---------- */
+let satellite={
+  angle:0,
+  dist:80,
+  trail:[]
+};
+
+/* ---------- Draw Loop ---------- */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  /* Stars */
+  stars.forEach(s=>{
+    ctx.globalAlpha = 0.5 + Math.sin(Date.now()*0.001+s.a)*0.5;
+    ctx.fillStyle="white";
+    ctx.beginPath();
+    ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  /* Sun */
+  const sunGrad=ctx.createRadialGradient(center.x,center.y,10,center.x,center.y,80);
+  sunGrad.addColorStop(0,"#fff5a5");
+  sunGrad.addColorStop(1,"#ff8c00");
+  ctx.fillStyle=sunGrad;
+  ctx.beginPath();
+  ctx.arc(center.x,center.y,60,0,Math.PI*2);
+  ctx.fill();
+
+  /* Planets */
+  planets.forEach(p=>{
+    p.angle+=p.speed;
+    const x=center.x+Math.cos(p.angle)*p.dist;
+    const y=center.y+Math.sin(p.angle)*p.dist;
+
+    const grad=ctx.createRadialGradient(x-p.r/3,y-p.r/3,p.r/4,x,y,p.r);
+    grad.addColorStop(0,p.colors[0]);
+    grad.addColorStop(1,p.colors[1]);
+
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(x,y,p.r,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  /* Satellite */
+  satellite.angle+=0.04;
+  const sx=center.x+Math.cos(satellite.angle)*satellite.dist;
+  const sy=center.y+Math.sin(satellite.angle)*satellite.dist;
+
+  satellite.trail.push({x:sx,y:sy});
+  if(satellite.trail.length>40) satellite.trail.shift();
+
+  ctx.strokeStyle="#00fff0";
+  ctx.beginPath();
+  satellite.trail.forEach((t,i)=>{
+    if(i===0) ctx.moveTo(t.x,t.y);
+    else ctx.lineTo(t.x,t.y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle="#00fff0";
+  ctx.beginPath();
+  ctx.arc(sx,sy,4,0,Math.PI*2);
+  ctx.fill();
+
+  /* Shooting Stars */
+  shootingStars.forEach((s,i)=>{
+    ctx.strokeStyle="white";
+    ctx.beginPath();
+    ctx.moveTo(s.x,s.y);
+    ctx.lineTo(s.x-s.vx*2,s.y-s.vy*2);
+    ctx.stroke();
+    s.x+=s.vx;
+    s.y+=s.vy;
+    s.life--;
+    if(s.life<=0) shootingStars.splice(i,1);
+  });
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* =========================================================
+   🔥 FIREBASE + CHART
+   ========================================================= */
+firebase.initializeApp({
+  apiKey:"AIzaSyD-Cm9OBSDo3Axyh2nTwrq60yBwoy4gbAM",
+  databaseURL:"https://fgesp-a6843-default-rtdb.firebaseio.com/"
+});
+const ref=firebase.database().ref("sensor");
+
+const chart=new Chart(document.getElementById("chart"),{
+  type:'line',
+  data:{labels:[],datasets:[
+    {label:'Temp °C',data:[],borderColor:'#00fff0',tension:.4},
+    {label:'Humidity %',data:[],borderColor:'#ff00ff',tension:.4}
+  ]},
+  options:{plugins:{legend:{labels:{color:'#00fff0'}}}}
+});
+
+ref.on("value",s=>{
+  const d=s.val(); if(!d)return;
+  temperature.innerText=d.temperature;
+  humidity.innerText=d.humidity;
+
+  chart.data.labels.push(new Date().toLocaleTimeString());
+  chart.data.datasets[0].data.push(d.temperature);
+  chart.data.datasets[1].data.push(d.humidity);
+
+  if(chart.data.labels.length>20){
+    chart.data.labels.shift();
+    chart.data.datasets.forEach(ds=>ds.data.shift());
+  }
+  chart.update();
+});
+
+/* Utilities */
+function exportCSV(){alert("CSV export ready ✔")}
+function clearChart(){
+  chart.data.labels=[];
+  chart.data.datasets.forEach(ds=>ds.data=[]);
+  chart.update();
+}
+</script>
+
+</body>
+</html>
